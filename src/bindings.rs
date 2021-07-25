@@ -10,6 +10,8 @@ mod ruby {
     #[link(name = "ruby")]
     extern "C" {
         pub fn rb_define_global_const(name: *const i8, value: VALUE);
+        pub fn rb_define_const(parent: VALUE, name: *const i8, value: VALUE);
+
         pub fn rb_float_new(value: c_double) -> VALUE;
         pub fn rb_num2dbl(value: VALUE) -> c_double;
 
@@ -59,6 +61,13 @@ pub fn rb_float_new(value: f64) -> VALUE {
 pub fn rb_define_global_const(name: &str, value: VALUE) -> Result<(), Box<dyn Error>> {
     let c_name = CString::new(name)?;
     unsafe { ruby::rb_define_global_const(c_name.as_ptr(), value) };
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub fn rb_define_const(parent: VALUE, name: &str, value: VALUE) -> Result<(), Box<dyn Error>> {
+    let c_name = CString::new(name)?;
+    unsafe { ruby::rb_define_const(parent, c_name.as_ptr(), value) };
     Ok(())
 }
 
