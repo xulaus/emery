@@ -7,5 +7,5 @@
 
 - Might need to point the linker to the right ruby manually - otherwise you get "Incompatible Library Version" errors
     ```
-    RUSTFLAGS="-C link-args=-L~/.rvm/rubies/ruby-2.6.3/lib" cargo build
+    RUSTFLAGS="-C link-args=-L~/.rvm/rubies/ruby-2.6.3/lib -C link-args=-lruby" cargo build
     ```

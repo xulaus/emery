@@ -1,9 +1,22 @@
-mod bindings;
-use bindings::*;
+mod wrapper;
+use wrapper::*;
+
+use std::convert::*;
 
 #[no_mangle]
-pub extern "C" fn emery_fn(_a: VALUE) -> VALUE {
-    rb_float_new(2.0)
+pub extern "C" fn ruby_str_all_whitespace(_module: RubyValue, arg: RubyValue) -> RubyValue {
+    let string: &str = <&str>::try_from(arg).unwrap_or("");
+    if string.is_ascii() {
+        string.bytes().all(|c| (c as char).is_ascii_whitespace())
+    } else {
+        string.trim_start().is_empty()
+    }
+    .into()
+}
+
+#[no_mangle]
+pub extern "C" fn ruby_new_string(_module: RubyValue) -> RubyValue {
+    "lfg".into()
 }
 
 #[no_mangle]
@@ -13,8 +26,14 @@ pub extern "C" fn Init_libemery() {
     rb_define_const(emery_module, "EMERY", rb_float_new(1.0)).expect("invalid function name");
     rb_define_module_function(
         emery_module,
-        "fn",
-        emery_fn as extern "C" fn(VALUE) -> VALUE,
+        "all_whitespace?",
+        ruby_str_all_whitespace as extern "C" fn(RubyValue, RubyValue) -> RubyValue,
+    )
+    .expect("invalid function name");
+    rb_define_module_function(
+        emery_module,
+        "new_string",
+        ruby_new_string as extern "C" fn(RubyValue) -> RubyValue,
     )
     .expect("invalid function name");
 }
