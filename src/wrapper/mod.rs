@@ -3,19 +3,18 @@ mod bindings;
 #[allow(warnings)]
 mod encoding;
 
-use std::{
-    convert::{From, TryFrom},
-    error::Error,
-    ffi::CString,
-    mem,
-    result::Result,
-    slice, str,
-};
+use std::{convert::From, error::Error, ffi::CString, mem, result::Result, slice, str};
 
 use bindings::VALUE;
 
 pub type CallbackPtr = unsafe extern "C" fn() -> VALUE;
 pub type RubyEncoding = *const libc::c_void;
+
+pub trait TryFromRuby: Sized {
+    type Error;
+
+    fn try_from(value: RubyValue) -> Result<Self, Self::Error>;
+}
 
 unsafe fn rb_str_len(value: VALUE) -> i64 {
     let rstring: *const bindings::RString = std::mem::transmute(value);
@@ -133,7 +132,7 @@ impl RubyValue {
     }
 }
 
-impl TryFrom<RubyValue> for bool {
+impl TryFromRuby for bool {
     type Error = ();
 
     fn try_from(value: RubyValue) -> Result<bool, ()> {
@@ -164,17 +163,29 @@ impl From<&str> for RubyValue {
     }
 }
 
-// impl<T> TryFrom<RubyValue> for Option<T> {
-//     fn try_from(&self) -> Result<bool, ()> {
-//         if (ruby_special_consts_RUBY_Qnil as VALUE) == self.0 {
-//             Ok(None)
-//         } else {
-//             Ok(Some(T::try_from(&self)?))
-//         }
-//     }
-// }
+impl<T> TryFromRuby for Option<T>
+where
+    T: TryFromRuby<Error = ()>,
+{
+    type Error = ();
 
-impl TryFrom<RubyValue> for &str {
+    fn try_from(value: RubyValue) -> Result<Option<T>, ()> {
+        if (bindings::ruby_special_consts_RUBY_Qnil as VALUE) == value.0 {
+            Ok(None)
+        } else {
+            Ok(Some(T::try_from(value)?))
+        }
+    }
+}
+
+impl<T: Into<RubyValue>> From<Option<T>> for RubyValue {
+    fn from(opt: Option<T>) -> RubyValue {
+        opt.map(|x| x.into())
+            .unwrap_or(RubyValue(bindings::ruby_special_consts_RUBY_Qnil as VALUE))
+    }
+}
+
+impl TryFromRuby for &str {
     type Error = ();
 
     fn try_from(value: RubyValue) -> Result<Self, Self::Error> {
@@ -198,7 +209,7 @@ impl TryFrom<RubyValue> for &str {
     }
 }
 
-impl TryFrom<RubyValue> for &[u8] {
+impl TryFromRuby for &[u8] {
     type Error = ();
 
     fn try_from(value: RubyValue) -> Result<Self, Self::Error> {
