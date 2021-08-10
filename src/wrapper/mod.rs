@@ -33,9 +33,9 @@ unsafe fn rb_str_ptr(value: VALUE) -> *const u8 {
     let flags = (*rstring).basic.flags;
 
     if flags & (bindings::ruby_rstring_flags_RSTRING_NOEMBED as u64) == 0 {
-        std::mem::transmute(&(*rstring).as_)
+        (*rstring).as_.ary.as_ptr() as *const u8
     } else {
-        std::mem::transmute((*rstring).as_.heap.ptr)
+        (*rstring).as_.heap.ptr as *const u8
     }
 }
 
