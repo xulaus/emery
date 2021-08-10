@@ -3,17 +3,22 @@ mod bindings;
 #[allow(warnings)]
 mod encoding;
 
-use std::{convert::From, error::Error, ffi::CString, mem, result::Result, slice, str};
+use std::{
+    convert::{AsRef, From},
+    error::Error,
+    ffi::CString,
+    mem,
+    result::Result,
+    slice, str,
+};
 
 use bindings::VALUE;
 
 pub type CallbackPtr = unsafe extern "C" fn() -> VALUE;
-pub type RubyEncoding = *const libc::c_void;
+pub type RubyConversionError = ();
 
 pub trait TryFromRuby: Sized {
-    type Error;
-
-    fn try_from(value: RubyValue) -> Result<Self, Self::Error>;
+    fn try_from(value: RubyValue) -> Result<Self, RubyConversionError>;
 }
 
 unsafe fn rb_str_len(value: VALUE) -> i64 {
@@ -133,8 +138,6 @@ impl RubyValue {
 }
 
 impl TryFromRuby for bool {
-    type Error = ();
-
     fn try_from(value: RubyValue) -> Result<bool, ()> {
         match value.infer_type() {
             Some(bindings::ruby_value_type_RUBY_T_TRUE) => Ok(true),
@@ -163,13 +166,8 @@ impl From<&str> for RubyValue {
     }
 }
 
-impl<T> TryFromRuby for Option<T>
-where
-    T: TryFromRuby<Error = ()>,
-{
-    type Error = ();
-
-    fn try_from(value: RubyValue) -> Result<Option<T>, ()> {
+impl<T: TryFromRuby> TryFromRuby for Option<T> {
+    fn try_from(value: RubyValue) -> Result<Option<T>, RubyConversionError> {
         if (bindings::ruby_special_consts_RUBY_Qnil as VALUE) == value.0 {
             Ok(None)
         } else {
@@ -185,43 +183,60 @@ impl<T: Into<RubyValue>> From<Option<T>> for RubyValue {
     }
 }
 
+#[derive(Copy, Clone)]
+pub struct RubyString(VALUE);
+
+impl RubyString {
+    fn utf8_compatable(&self) -> bool {
+        let utf8 = unsafe { encoding::rb_utf8_encoding() };
+        let ascii_7bit = unsafe { encoding::rb_usascii_encoding() };
+
+        let str_enc = unsafe { encoding::rb_enc_get(self.0) };
+        str_enc == utf8 || str_enc == ascii_7bit
+    }
+
+    fn len(&self) -> usize {
+        unsafe { rb_str_len(self.0) as usize }
+    }
+
+    fn as_ptr(&self) -> *const u8 {
+        unsafe { rb_str_ptr(self.0) }
+    }
+
+    fn force_utf8(&mut self) {
+        if !self.utf8_compatable() {
+            self.0 =
+                unsafe { encoding::rb_str_export_to_enc(self.0, encoding::rb_utf8_encoding()) };
+        };
+    }
+}
+
+impl TryFromRuby for RubyString {
+    fn try_from(value: RubyValue) -> Result<Self, RubyConversionError> {
+        if value.infer_type() != Some(bindings::ruby_value_type_RUBY_T_STRING) {
+            return Err(());
+        }
+
+        Ok(RubyString(value.0))
+    }
+}
+
 impl TryFromRuby for &str {
-    type Error = ();
+    fn try_from(value: RubyValue) -> Result<Self, RubyConversionError> {
+        let mut string: RubyString = <RubyString>::try_from(value)?;
+        string.force_utf8();
 
-    fn try_from(value: RubyValue) -> Result<Self, Self::Error> {
         unsafe {
-            if value.infer_type() != Some(bindings::ruby_value_type_RUBY_T_STRING) {
-                return Err(());
-            }
-            let utf8 = encoding::rb_utf8_encoding();
-            let ascii = encoding::rb_usascii_encoding();
-            let str_enc = encoding::rb_enc_get(value.0);
-
-            let data = if str_enc != utf8 && str_enc != ascii {
-                encoding::rb_str_export_to_enc(value.0, utf8)
-            } else {
-                value.0
-            };
-            let len = rb_str_len(data);
-            let slice = slice::from_raw_parts(rb_str_ptr(data), len as usize);
+            let slice: &[u8] = slice::from_raw_parts(string.as_ptr(), string.len());
             Ok(str::from_utf8_unchecked(slice))
         }
     }
 }
 
 impl TryFromRuby for &[u8] {
-    type Error = ();
-
-    fn try_from(value: RubyValue) -> Result<Self, Self::Error> {
-        unsafe {
-            if value.infer_type() != Some(bindings::ruby_value_type_RUBY_T_STRING) {
-                return Err(());
-            }
-
-            let data = value.0;
-            let len = rb_str_len(data);
-            Ok(slice::from_raw_parts(rb_str_ptr(data), len as usize))
-        }
+    fn try_from(value: RubyValue) -> Result<Self, RubyConversionError> {
+        let string: RubyString = <RubyString>::try_from(value)?;
+        unsafe { Ok(slice::from_raw_parts(string.as_ptr(), string.len())) }
     }
 }
 
