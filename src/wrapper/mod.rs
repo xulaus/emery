@@ -194,7 +194,7 @@ impl<T: Into<RubyValue>> From<Option<T>> for RubyValue {
 pub struct RubyString(VALUE);
 
 impl RubyString {
-    fn utf8_compatable(&self) -> bool {
+    pub fn is_utf8(&self) -> bool {
         let utf8 = unsafe { encoding::rb_utf8_encoding() };
         let ascii_7bit = unsafe { encoding::rb_usascii_encoding() };
 
@@ -202,40 +202,71 @@ impl RubyString {
         str_enc == utf8 || str_enc == ascii_7bit
     }
 
-    fn len(&self) -> usize {
+    pub fn is_ascii(&self) -> bool {
+        let ascii_7bit = unsafe { encoding::rb_usascii_encoding() };
+
+        let str_enc = unsafe { encoding::rb_enc_get(self.0) };
+        str_enc == ascii_7bit
+    }
+
+    pub fn len(&self) -> usize {
         unsafe { rb_str_len(self.0) as usize }
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) }
+    }
+
+    pub fn try_str(&self) -> Result<&str, RubyConversionError> {
+        if self.is_utf8() {
+            Ok(unsafe { str::from_utf8_unchecked(self.bytes()) })
+        } else {
+            Err(())
+        }
+    }
+
+    pub fn to_owned(&self) -> String {
+        if let Ok(s) = self.try_str() {
+            s.to_owned()
+        } else {
+            RubyString(unsafe {
+                encoding::rb_str_export_to_enc(self.0, encoding::rb_utf8_encoding())
+            })
+            .try_str()
+            .unwrap()
+            .to_owned()
+        }
     }
 
     fn as_ptr(&self) -> *const u8 {
         unsafe { rb_str_ptr(self.0) }
-    }
-
-    fn force_utf8(&mut self) {
-        if !self.utf8_compatable() {
-            self.0 =
-                unsafe { encoding::rb_str_export_to_enc(self.0, encoding::rb_utf8_encoding()) };
-        };
     }
 }
 
 impl TryFromRuby for RubyString {
     fn try_from(value: RubyValue) -> Result<Self, RubyConversionError> {
         if value.infer_type() != Some(bindings::ruby_value_type_RUBY_T_STRING) {
-            return Err(());
+            Err(())
+        } else {
+            Ok(RubyString(value.0))
         }
-
-        Ok(RubyString(value.0))
     }
 }
 
 impl TryFromRuby for &str {
     fn try_from(value: RubyValue) -> Result<Self, RubyConversionError> {
-        let mut string: RubyString = <RubyString>::try_from(value)?;
-        string.force_utf8();
+        let rstring: RubyString = <RubyString>::try_from(value)?;
 
-        unsafe {
-            let slice: &[u8] = slice::from_raw_parts(string.as_ptr(), string.len());
-            Ok(str::from_utf8_unchecked(slice))
+        // Would be real nice if we could just rstring.try_str()
+        // Borrow checker acts up though as we are being fast and
+        // loose with saftey
+        if rstring.is_utf8() {
+            unsafe {
+                let slice: &[u8] = slice::from_raw_parts(rstring.as_ptr(), rstring.len());
+                Ok(str::from_utf8_unchecked(slice))
+            }
+        } else {
+            Err(())
         }
     }
 }

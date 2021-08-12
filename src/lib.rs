@@ -5,11 +5,23 @@ use std::convert::*;
 
 #[no_mangle]
 pub extern "C" fn ruby_str_all_whitespace(_module: RubyValue, arg: RubyValue) -> RubyValue {
-    let string: &str = wrapper::TryFromRuby::try_from(arg).unwrap_or("");
-    if string.is_ascii() {
-        string.bytes().all(|c| (c as char).is_ascii_whitespace())
-    } else {
-        string.trim_start().is_empty()
+    let casted: Result<RubyString, RubyConversionError> = TryFromRuby::try_from(arg);
+    match casted {
+        Ok(string) => {
+            if string.len() == 0 {
+                Some(true)
+            } else if let Ok(utf8) = string.try_str() {
+                if utf8.is_ascii() {
+                    Some(utf8.bytes().all(|c| (c as char).is_ascii_whitespace()))
+                } else {
+                    Some(utf8.trim_start().is_empty())
+                }
+            } else {
+                let utf8: String = string.to_owned();
+                Some(utf8.trim_start().is_empty())
+            }
+        }
+        _ => None,
     }
     .into()
 }
