@@ -17,14 +17,14 @@ pub extern "C" fn ruby_str_all_whitespace(_module: RubyValue, arg: RubyValue) ->
 #[no_mangle]
 pub extern "C" fn ruby_new_string(_module: RubyValue, arg: RubyValue) -> RubyValue {
     let inp: Option<&str> = wrapper::TryFromRuby::try_from(arg).unwrap_or(None);
-    inp.map(|x| "asd").into()
+    inp.map(|_| "asd").into()
 }
 
 #[no_mangle]
 pub extern "C" fn Init_libemery() {
     let emery_module = rb_define_module("EMERY").expect("invalid module name");
 
-    rb_define_const(emery_module, "EMERY", rb_float_new(1.0)).expect("invalid function name");
+    rb_define_const(emery_module, "EMERY", 1.0.into()).expect("invalid function name");
     rb_define_module_function(
         emery_module,
         "all_whitespace?",

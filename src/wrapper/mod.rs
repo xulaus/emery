@@ -3,14 +3,7 @@ mod bindings;
 #[allow(warnings)]
 mod encoding;
 
-use std::{
-    convert::{AsRef, From},
-    error::Error,
-    ffi::CString,
-    mem,
-    result::Result,
-    slice, str,
-};
+use std::{convert::From, error::Error, ffi::CString, mem, result::Result, slice, str};
 
 use bindings::VALUE;
 
@@ -94,7 +87,15 @@ impl RubyValue {
         (self.0 & (bindings::ruby_special_consts_RUBY_FIXNUM_FLAG as VALUE)) != 0
     }
 
-    pub fn infer_type(&self) -> Option<bindings::ruby_value_type> {
+    pub fn is_numeric(&self) -> bool {
+        match self.infer_type() {
+            Some(bindings::ruby_value_type_RUBY_T_FLOAT)
+            | Some(bindings::ruby_value_type_RUBY_T_FIXNUM) => true,
+            _ => false,
+        }
+    }
+
+    fn infer_type(&self) -> Option<bindings::ruby_value_type> {
         if !self.is_special_const() {
             self.builtin_type()
         } else if self.is_false() {
@@ -163,6 +164,12 @@ impl From<&str> for RubyValue {
         RubyValue(unsafe {
             bindings::rb_utf8_str_new(std::mem::transmute(value.as_ptr()), value.len() as i64)
         })
+    }
+}
+
+impl From<f64> for RubyValue {
+    fn from(value: f64) -> RubyValue {
+        RubyValue(unsafe { bindings::rb_float_new(value) })
     }
 }
 
@@ -240,9 +247,14 @@ impl TryFromRuby for &[u8] {
     }
 }
 
-#[allow(dead_code)]
-pub fn rb_float_new(value: f64) -> RubyValue {
-    RubyValue(unsafe { bindings::rb_float_new(value) })
+impl TryFromRuby for f64 {
+    fn try_from(value: RubyValue) -> Result<Self, RubyConversionError> {
+        if !value.is_numeric() {
+            Err(())
+        } else {
+            Ok(unsafe { bindings::rb_num2dbl(value.0) })
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -261,11 +273,6 @@ pub fn rb_define_const(
     let c_name = CString::new(name)?;
     unsafe { bindings::rb_define_const(parent.0, c_name.as_ptr(), value.0) };
     Ok(())
-}
-
-#[allow(dead_code)]
-pub fn rb_num2dbl(value: RubyValue) -> f64 {
-    unsafe { bindings::rb_num2dbl(value.0) }
 }
 
 #[allow(dead_code)]
