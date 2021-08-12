@@ -118,12 +118,12 @@ impl RubyValue {
         (self.0 & (bindings::ruby_special_consts_RUBY_IMMEDIATE_MASK as VALUE)) != 0
     }
 
-    fn test(&self) -> bool {
+    pub fn truthy(&self) -> bool {
         (self.0 & !(bindings::ruby_special_consts_RUBY_Qnil as VALUE)) != 0
     }
 
     fn is_special_const(&self) -> bool {
-        self.is_immediate() || !self.test()
+        self.is_immediate() || !self.truthy()
     }
 
     fn builtin_type(&self) -> Option<bindings::ruby_value_type> {
