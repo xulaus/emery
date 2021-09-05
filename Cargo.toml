@@ -11,4 +11,8 @@ libc = "*"
 
 [lib]
 name = "emery"
+
+[[example]]
+name = "fast_blank"
 crate-type = ["cdylib"]
+path = "examples/fast_blank.rs"
