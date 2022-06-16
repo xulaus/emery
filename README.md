@@ -5,4 +5,4 @@
 
 ## Purpose
 
-Emery is a simple glue layer between Ruby and Rust. Its goal is to allow allow the creation Rust based Ruby extensions and allow idomatic code on both sides of the interface.
+Emery is a simple glue layer between Ruby and Rust. Its goal is to allow the creation Rust based Ruby extensions and allow idomatic code on both sides of the interface.
