@@ -9,6 +9,9 @@ description = "Test"
 [dependencies]
 libc = "*"
 
+[build-dependencies]
+bindgen = "0.53.1"
+
 [lib]
 name = "emery"
 
