@@ -184,9 +184,32 @@ impl<T: TryFromRuby> TryFromRuby for Option<T> {
 }
 
 impl<T: Into<RubyValue>> From<Option<T>> for RubyValue {
-    fn from(opt: Option<T>) -> RubyValue {
-        opt.map(|x| x.into())
-            .unwrap_or(RubyValue(bindings::ruby_special_consts_RUBY_Qnil as VALUE))
+    fn from(value: Option<T>) -> RubyValue {
+        match value {
+            Some(inner) => inner.into(),
+            None => RubyValue(bindings::ruby_special_consts_RUBY_Qnil as VALUE),
+        }
+    }
+}
+
+impl<T: Into<RubyValue>, Err: std::fmt::Display> From<Result<T, Err>> for RubyValue {
+    fn from(value: Result<T, Err>) -> RubyValue {
+        match value {
+            Ok(inner) => inner.into(),
+            Err(e) => {
+                let error = format!("{}", e);
+                unsafe {
+                    bindings::rb_exc_raise(
+                        bindings::rb_exc_new(
+                         bindings::rb_eRuntimeError,
+                         error.as_ptr() as *const std::os::raw::c_char,
+                         error.len() as std::os::raw::c_long
+                        )
+                    );
+                }
+                RubyValue(bindings::ruby_special_consts_RUBY_Qnil as VALUE)
+            }
+        }
     }
 }
 
