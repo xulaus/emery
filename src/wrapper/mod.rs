@@ -138,15 +138,7 @@ impl RubyValue {
     }
 }
 
-impl TryFromRuby for bool {
-    fn try_from(value: RubyValue) -> Result<bool, ()> {
-        match value.infer_type() {
-            Some(bindings::ruby_value_type_RUBY_T_TRUE) => Ok(true),
-            Some(bindings::ruby_value_type_RUBY_T_FALSE) => Ok(false),
-            _ => Err(()),
-        }
-    }
-}
+// Conversions for booleans
 
 impl From<bool> for RubyValue {
     fn from(value: bool) -> RubyValue {
@@ -159,19 +151,86 @@ impl From<bool> for RubyValue {
     }
 }
 
-impl From<&str> for RubyValue {
-    fn from(value: &str) -> RubyValue {
-        RubyValue(unsafe {
-            bindings::rb_utf8_str_new(std::mem::transmute(value.as_ptr()), value.len() as i64)
-        })
+impl TryFromRuby for bool {
+    fn try_from(value: RubyValue) -> Result<bool, ()> {
+        match value.infer_type() {
+            Some(bindings::ruby_value_type_RUBY_T_TRUE) => Ok(true),
+            Some(bindings::ruby_value_type_RUBY_T_FALSE) => Ok(false),
+            _ => Err(()),
+        }
     }
 }
+
+// Conversions for numbers
 
 impl From<f64> for RubyValue {
     fn from(value: f64) -> RubyValue {
         RubyValue(unsafe { bindings::rb_float_new(value) })
     }
 }
+impl From<f32> for RubyValue {
+    fn from(value: f32) -> RubyValue {
+        RubyValue(unsafe { bindings::rb_float_new(value as f64) })
+    }
+}
+
+impl From<u64> for RubyValue {
+    fn from(value: u64) -> RubyValue {
+        RubyValue(unsafe { bindings::rb_ull2inum(value) })
+    }
+}
+
+impl From<i64> for RubyValue {
+    fn from(value: i64) -> RubyValue {
+        RubyValue(unsafe { bindings::rb_ll2inum(value) })
+    }
+}
+
+impl From<isize> for RubyValue {
+    fn from(value: isize) -> RubyValue {
+        RubyValue(unsafe { bindings::rb_int2inum(value) })
+    }
+}
+
+impl From<usize> for RubyValue {
+    fn from(value: usize) -> RubyValue {
+        RubyValue(unsafe { bindings::rb_uint2inum(value) })
+    }
+}
+
+impl From<u32> for RubyValue {
+    fn from(value: u32) -> RubyValue {
+        RubyValue(unsafe { bindings::rb_uint2inum(value as usize) })
+    }
+}
+
+impl From<i32> for RubyValue {
+    fn from(value: i32) -> RubyValue {
+        RubyValue(unsafe { bindings::rb_int2inum(value as isize) })
+    }
+}
+
+impl TryFromRuby for f64 {
+    fn try_from(value: RubyValue) -> Result<Self, RubyConversionError> {
+        if !value.is_numeric() {
+            Err(())
+        } else {
+            Ok(unsafe { bindings::rb_num2dbl(value.0) })
+        }
+    }
+}
+
+impl TryFromRuby for i64 {
+    fn try_from(value: RubyValue) -> Result<i64, RubyConversionError> {
+        if value.is_fixnum() {
+            Ok(unsafe { bindings::rb_fix2int(value.0) })
+        } else {
+            Err(())
+        }
+    }
+}
+
+// Conversions for Options
 
 impl<T: TryFromRuby> TryFromRuby for Option<T> {
     fn try_from(value: RubyValue) -> Result<Option<T>, RubyConversionError> {
@@ -192,6 +251,8 @@ impl<T: Into<RubyValue>> From<Option<T>> for RubyValue {
     }
 }
 
+// Result to exception conversion
+
 impl<T: Into<RubyValue>, Err: std::fmt::Display> From<Result<T, Err>> for RubyValue {
     fn from(value: Result<T, Err>) -> RubyValue {
         match value {
@@ -210,6 +271,16 @@ impl<T: Into<RubyValue>, Err: std::fmt::Display> From<Result<T, Err>> for RubyVa
                 RubyValue(bindings::ruby_special_consts_RUBY_Qnil as VALUE)
             }
         }
+    }
+}
+
+// String conversions and wrappers
+
+impl From<&str> for RubyValue {
+    fn from(value: &str) -> RubyValue {
+        RubyValue(unsafe {
+            bindings::rb_utf8_str_new(std::mem::transmute(value.as_ptr()), value.len() as i64)
+        })
     }
 }
 
@@ -301,15 +372,8 @@ impl TryFromRuby for &[u8] {
     }
 }
 
-impl TryFromRuby for f64 {
-    fn try_from(value: RubyValue) -> Result<Self, RubyConversionError> {
-        if !value.is_numeric() {
-            Err(())
-        } else {
-            Ok(unsafe { bindings::rb_num2dbl(value.0) })
-        }
-    }
-}
+
+// Add hacky direct binding
 
 #[allow(dead_code)]
 pub fn rb_define_global_const(name: &str, value: RubyValue) -> Result<(), Box<dyn Error>> {
