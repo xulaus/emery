@@ -1,0 +1,45 @@
+require 'rake/extensiontask'
+require 'rake/testtask'
+
+Rake::ExtensionTask.new('fnv')
+
+spec = Gem::Specification::load(File.expand_path('../fnv.gemspec', __FILE__))
+
+Gem::PackageTask.new(spec) {}
+Rake::ExtensionTask.new('fnv', spec)
+
+def gem_dir(spec)
+  bin_spec = spec.dup
+  bin_spec.platform = RUBY_PLATFORM
+
+  pkg = Gem::PackageTask.new(bin_spec)  {}
+  pkg.package_dir_path
+end
+
+
+Rake::TestTask.new do |t|
+  t.libs = [File.join(gem_dir(spec), 'lib')]
+  t.pattern = "tests/*_test.rb"
+  t.verbose = true
+end
+
+task :bench  do
+  require_relative  File.join(gem_dir(spec), 'lib', 'fnv')
+  require "benchmark"
+  require "digest"
+
+  def test_strings(chars, n, len)
+      Array.new(n) { Array.new(len) { chars.sample }.join("") };
+  end
+
+  NUMBER_UNIQ = 1000
+  STR_SIZE = 500
+  ar = test_strings(('a'..'Z').to_a, NUMBER_UNIQ, STR_SIZE)
+  Benchmark.bmbm do |x|
+    x.report("fnv1a64") { ar.each { |x| Digest::FNV1a64.hexdigest(x) } }
+    x.report("fnv1a128") { ar.each { |x| Digest::FNV1a128.hexdigest(x) } }
+    x.report("sha256") { ar.each { |x| Digest::SHA256.hexdigest(x) } }
+  end
+end
+
+task default: [:native, :gem, :test, :bench]

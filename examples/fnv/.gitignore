@@ -1,0 +1,8 @@
+ext/fnv/target/
+ext/fnv/Makefile
+ext/fnv/Cargo.lock
+ext/fnv/mkmf.log
+lib/fnv/
+*.gem
+tmp
+pkg

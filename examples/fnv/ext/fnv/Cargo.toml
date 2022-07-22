@@ -1,0 +1,12 @@
+[package]
+name = "fnv"
+version = "0.1.0"
+edition = "2018"
+description = "Test"
+
+[dependencies]
+emery = { path = "../../../../" }
+
+[lib]
+name = "fnv"
+crate-type = ["cdylib"]
