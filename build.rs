@@ -7,10 +7,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     let ruby_script = br#"
-        cnf = Hash.new do |hash, key|
-            hash[key]=RbConfig::MAKEFILE_CONFIG.fetch(key, "").gsub(/\$\((.*?)\)/) { |v| cnf[v[2..-2]] }
-        end
-        puts cnf.values_at("libdir", "rubyhdrdir", "rubyarchhdrdir",)
+        puts RbConfig::CONFIG.values_at("libdir", "rubyhdrdir", "rubyarchhdrdir")
     "#;
     let ruby_out = {
         let mut child = Command::new("ruby")
