@@ -8,23 +8,25 @@ spec = Gem::Specification::load(File.expand_path('../fnv.gemspec', __FILE__))
 Gem::PackageTask.new(spec) {}
 Rake::ExtensionTask.new('fnv', spec)
 
-def gem_dir(spec)
+def require_loc(spec)
   bin_spec = spec.dup
   bin_spec.platform = RUBY_PLATFORM
 
   pkg = Gem::PackageTask.new(bin_spec)  {}
-  pkg.package_dir_path
+  File.join(__dir__, pkg.package_dir_path, 'lib', 'fnv')
 end
 
 
 Rake::TestTask.new do |t|
-  t.libs = [File.join(gem_dir(spec), 'lib')]
+  t.libs = []
+  t.ruby_opts = ["-r '#{require_loc(spec)}'", "-r 'minitest/autorun'"]
   t.pattern = "tests/*_test.rb"
   t.verbose = true
 end
 
+
 task :bench  do
-  require_relative  File.join(gem_dir(spec), 'lib', 'fnv')
+  require require_loc(spec)
   require "benchmark"
   require "digest"
 

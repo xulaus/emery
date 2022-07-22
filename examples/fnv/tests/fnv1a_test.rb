@@ -1,6 +1,3 @@
-require "fnv"
-require 'minitest/autorun'
-
 describe Digest::FNV1a64 do
   describe "whens given non string data" do
     it "raises an error" do
