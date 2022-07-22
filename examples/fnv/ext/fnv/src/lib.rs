@@ -1,41 +1,33 @@
 extern crate emery;
+extern crate num_traits;
 
 use emery::*;
 
-fn fnv1a64(arg: RubyValue) -> Result<String, RubyConversionError>{
+fn fnv1a<T>(prime: T, basis: T, arg: RubyValue) -> Result<T, RubyConversionError>
+where
+    T:  std::ops::BitXor<Output = T> +
+        num_traits::ops::wrapping::WrappingMul +
+        std::convert::From<u8> {
     let string: RubyStringLike = TryFromRuby::try_from(&arg)?;
-    const PRIME: u64 = 1099511628211;
-    const BASIS: u64 = 14695981039346656037;
-    let hash = string.bytes().iter().fold(
-        BASIS,
+   Ok(string.bytes().iter().fold(
+        basis,
         |hash, byte| {
-            (hash ^ (*byte as u64)).wrapping_mul(PRIME)
+            (hash ^ T::from(*byte)).wrapping_mul(&prime)
         }
-    );
-
-    Ok(format!("{:x}", hash))
-}
-
-fn fnv1a128(arg: RubyValue) -> Result<String, RubyConversionError>{
-    let string: RubyStringLike = TryFromRuby::try_from(&arg)?;
-    const PRIME: u128 = 309485009821345068724781371;
-    const BASIS: u128 = 144066263297769815596495629667062367629;
-    let hash = string.bytes().iter().fold(
-        BASIS,
-        |hash, byte| {
-            (hash ^ (*byte as u128)).wrapping_mul(PRIME)
-        }
-    );
-    Ok(format!("{:x}", hash))
+    ))
 }
 
 #[no_mangle]
 pub extern "C" fn ruby_str_fnv1a64(_module: RubyValue, arg: RubyValue) -> RubyValue {
-    fnv1a64(arg).into()
+    const PRIME: u64 = 1099511628211;
+    const BASIS: u64 = 14695981039346656037;
+    fnv1a::<u64>(PRIME, BASIS, arg).map(|hash| format!("{:x}", hash)).into()
 }
 #[no_mangle]
 pub extern "C" fn ruby_str_fnv1a128(_module: RubyValue, arg: RubyValue) -> RubyValue {
-    fnv1a128(arg).into()
+    const PRIME: u128 = 309485009821345068724781371;
+    const BASIS: u128 = 144066263297769815596495629667062367629;
+    fnv1a::<u128>(PRIME, BASIS, arg).map(|hash| format!("{:x}", hash)).into()
 }
 
 #[no_mangle]

@@ -6,6 +6,7 @@ description = "Test"
 
 [dependencies]
 emery = { path = "../../../../" }
+num-traits = "*"
 
 [lib]
 name = "fnv"
