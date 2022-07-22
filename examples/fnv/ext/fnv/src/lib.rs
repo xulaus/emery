@@ -3,7 +3,7 @@ extern crate emery;
 use emery::*;
 
 fn fnv1a (arg: RubyValue) -> Result<String, RubyConversionError>{
-    let string: RubyString = TryFromRuby::try_from(&arg)?;
+    let string: RubyStringLike = TryFromRuby::try_from(&arg)?;
     const PRIME: u64 = 1099511628211;
     const BASIS: u64 = 14695981039346656037;
     let hash = string.bytes().iter().fold(

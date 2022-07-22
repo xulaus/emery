@@ -23,19 +23,6 @@ impl std::fmt::Display for RubyConversionError {
 pub trait TryFromRuby<'a>: Sized {
     fn try_from(value: &'a RubyValue) -> Result<Self, RubyConversionError>;
 }
-
-unsafe fn rb_str_len(value: VALUE) -> i64 {
-    let rstring: *const bindings::RString = std::mem::transmute(value);
-    let flags = (*rstring).basic.flags;
-
-    if flags & (bindings::ruby_rstring_flags_RSTRING_NOEMBED as u64) == 0 {
-        ((flags & (bindings::ruby_rstring_flags_RSTRING_EMBED_LEN_MASK as u64))
-            >> bindings::ruby_rstring_flags_RSTRING_EMBED_LEN_SHIFT as u64) as i64
-    } else {
-        (*rstring).as_.heap.len
-    }
-}
-
 unsafe fn rb_str_ptr(value: VALUE) -> *const u8 {
     let rstring: *const bindings::RString = std::mem::transmute(value);
     let flags = (*rstring).basic.flags;
@@ -310,8 +297,12 @@ impl From<String> for RubyValue {
     }
 }
 
-#[derive(Copy, Clone)]
 pub struct RubyString<'a>(&'a VALUE);
+pub struct RubySymbol<'a>(&'a VALUE);
+pub enum  RubyStringLike<'a>{
+    String(RubyString<'a>),
+    Symbol(RubySymbol<'a>)
+}
 
 impl<'a> RubyString<'a> {
     pub fn is_utf8(&self) -> bool {
@@ -330,14 +321,14 @@ impl<'a> RubyString<'a> {
     }
 
     pub fn len(&self) -> usize {
-        unsafe { rb_str_len(*self.0) as usize }
+        unsafe { bindings::rb_str_strlen(*self.0 ) as usize }
     }
 
-    pub fn bytes(&self) -> &[u8] {
+    pub fn bytes(&self) -> &'a [u8] {
         unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) }
     }
 
-    pub fn try_str(&'a self) -> Result<&'a str, RubyConversionError> {
+    pub fn try_str(&self) -> Result<&'a str, RubyConversionError> {
         if self.is_utf8() {
             Ok(unsafe { str::from_utf8_unchecked(self.bytes()) })
         } else {
@@ -352,7 +343,7 @@ impl<'a> RubyString<'a> {
         if let Ok(s) = self.try_str() {
             s.to_owned()
         } else {
-            let converted = unsafe { encoding::rb_str_export_to_enc(*(self.0), encoding::rb_utf8_encoding()) };
+            let converted = unsafe { encoding::rb_str_export_to_enc(*self.0, encoding::rb_utf8_encoding()) };
             RubyString(&converted)
             .try_str()
             .unwrap()
@@ -365,15 +356,85 @@ impl<'a> RubyString<'a> {
     }
 }
 
+impl<'a> RubySymbol<'a> {
+    pub fn try_str(&self) -> Result<&'a str, RubyConversionError> {
+        str::from_utf8(self.bytes()).map_err(|_| RubyConversionError {value: "".to_owned(), into_type: "".to_owned()}) // TODO better error
+    }
+
+    pub fn bytes(&self) -> &'a [u8] {
+        unsafe {
+            let cstr = std::ffi::CStr::from_ptr(self.as_ptr());
+            cstr.to_bytes()
+        }
+    }
+
+    pub fn to_owned(&self) -> Result<String, RubyConversionError> {
+        self.try_str().map(|s| s.to_owned())
+    }
+
+    unsafe fn as_ptr(&self) -> *const i8 {
+        bindings::rb_id2name(bindings::rb_sym2id(*self.0))
+    }
+}
+
+impl<'a> RubyStringLike<'a> {
+    pub fn try_str(&self) -> Result<&'a str, RubyConversionError> {
+        match self {
+            Self::String(str) => str.try_str(),
+            Self::Symbol(sym) => sym.try_str(),
+        }
+    }
+
+    pub fn to_owned(&self) -> Result<String, RubyConversionError> {
+        match self {
+            Self::String(str) => Ok(str.to_owned()),
+            Self::Symbol(sym) => sym.to_owned() ,
+        }
+    }
+
+    pub fn bytes(&self) -> &'a [u8] {
+        match self {
+            Self::String(str) => str.bytes(),
+            Self::Symbol(sym) => sym.bytes() ,
+        }
+    }
+}
+
 impl<'a> TryFromRuby<'a> for RubyString<'a> {
     fn try_from(value: &'a RubyValue) -> Result<Self, RubyConversionError> {
-        if value.infer_type() != Some(bindings::ruby_value_type_RUBY_T_STRING) {
+        if value.infer_type() == Some(bindings::ruby_value_type_RUBY_T_STRING) {
+            Ok(RubyString(&value.0))
+        } else {
             Err(RubyConversionError{
                 value: "".to_owned(), // TODO
                 into_type: "string".to_owned()
             })
+        }
+    }
+}
+
+impl<'a> TryFromRuby<'a> for RubySymbol<'a> {
+    fn try_from(value: &'a RubyValue) -> Result<Self, RubyConversionError> {
+        if value.infer_type() == Some(bindings::ruby_value_type_RUBY_T_SYMBOL) {
+            Ok(RubySymbol(&value.0))
         } else {
-            Ok(RubyString(&value.0))
+            Err(RubyConversionError{
+                value: "".to_owned(), // TODO
+                into_type: "string".to_owned()
+            })
+        }
+    }
+}
+
+impl<'a> TryFromRuby<'a> for RubyStringLike<'a> {
+    fn try_from(value: &'a RubyValue) -> Result<Self, RubyConversionError> {
+        match value.infer_type() {
+            Some(bindings::ruby_value_type_RUBY_T_SYMBOL) => Ok(RubyStringLike::Symbol(RubySymbol(&value.0))),
+            Some(bindings::ruby_value_type_RUBY_T_STRING) => Ok(RubyStringLike::String(RubyString(&value.0))),
+            _ => Err(RubyConversionError{
+                value: "".to_owned(), // TODO
+                into_type: "string".to_owned()
+            })
         }
     }
 }
