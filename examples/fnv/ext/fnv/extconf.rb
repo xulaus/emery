@@ -19,12 +19,14 @@ copy_command = "ld #{rust_out} -bundle -arch x86_64 -platform_version macos 12.0
 
 
 File.write('Makefile', <<~EOF)
-all: Makefile
+build: Makefile
 \t@#{compile_command}
 \t@#{copy_command}
+all: build
+\t@echo "" > /dev/null
 clean:
 \trm -rf target
 \trm -rf ../../lib/fnv
-install:
+install: build
 \t@echo "" > /dev/null
 EOF
