@@ -8,10 +8,20 @@ use std::{convert::From, error::Error, ffi::CString, mem, result::Result, slice,
 use bindings::VALUE;
 
 pub type CallbackPtr = unsafe extern "C" fn() -> VALUE;
-pub type RubyConversionError = ();
+#[derive(Debug)]
+pub struct RubyConversionError{
+    value: String,
+    into_type: String
+}
 
-pub trait TryFromRuby: Sized {
-    fn try_from(value: RubyValue) -> Result<Self, RubyConversionError>;
+impl std::fmt::Display for RubyConversionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Invalid Conversion of \"{}\" into {}", &self.value, &self.into_type)
+    }
+}
+
+pub trait TryFromRuby<'a>: Sized {
+    fn try_from(value: &'a RubyValue) -> Result<Self, RubyConversionError>;
 }
 
 unsafe fn rb_str_len(value: VALUE) -> i64 {
@@ -59,7 +69,6 @@ impl RubyCallback for extern "C" fn(RubyValue, RubyValue) -> RubyValue {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct RubyValue(pub VALUE);
 
 impl RubyValue {
@@ -151,12 +160,15 @@ impl From<bool> for RubyValue {
     }
 }
 
-impl TryFromRuby for bool {
-    fn try_from(value: RubyValue) -> Result<bool, ()> {
+impl TryFromRuby<'_> for bool {
+    fn try_from(value: &RubyValue) -> Result<bool, RubyConversionError> {
         match value.infer_type() {
             Some(bindings::ruby_value_type_RUBY_T_TRUE) => Ok(true),
             Some(bindings::ruby_value_type_RUBY_T_FALSE) => Ok(false),
-            _ => Err(()),
+            _ => Err(RubyConversionError{
+                value: "".to_owned(), // TODO
+                into_type: "bool".to_owned()
+            }),
         }
     }
 }
@@ -210,30 +222,36 @@ impl From<i32> for RubyValue {
     }
 }
 
-impl TryFromRuby for f64 {
-    fn try_from(value: RubyValue) -> Result<Self, RubyConversionError> {
+impl TryFromRuby<'_> for f64 {
+    fn try_from(value: &RubyValue) -> Result<Self, RubyConversionError> {
         if !value.is_numeric() {
-            Err(())
+            Err(RubyConversionError{
+                value: "".to_owned(), // TODO
+                into_type: "64 bit float".to_owned()
+            })
         } else {
             Ok(unsafe { bindings::rb_num2dbl(value.0) })
         }
     }
 }
 
-impl TryFromRuby for i64 {
-    fn try_from(value: RubyValue) -> Result<i64, RubyConversionError> {
+impl TryFromRuby<'_> for i64 {
+    fn try_from(value: &RubyValue) -> Result<i64, RubyConversionError> {
         if value.is_fixnum() {
             Ok(unsafe { bindings::rb_fix2int(value.0) })
         } else {
-            Err(())
+            Err(RubyConversionError{
+                value: "".to_owned(), // TODO
+                into_type: "64 bit integer".to_owned()
+            })
         }
     }
 }
 
 // Conversions for Options
 
-impl<T: TryFromRuby> TryFromRuby for Option<T> {
-    fn try_from(value: RubyValue) -> Result<Option<T>, RubyConversionError> {
+impl<'a, T: TryFromRuby<'a>> TryFromRuby<'a> for Option<T> {
+    fn try_from(value: &'a RubyValue) -> Result<Option<T>, RubyConversionError> {
         if (bindings::ruby_special_consts_RUBY_Qnil as VALUE) == value.0 {
             Ok(None)
         } else {
@@ -285,37 +303,40 @@ impl From<&str> for RubyValue {
 }
 
 #[derive(Copy, Clone)]
-pub struct RubyString(VALUE);
+pub struct RubyString<'a>(&'a VALUE);
 
-impl RubyString {
+impl<'a> RubyString<'a> {
     pub fn is_utf8(&self) -> bool {
         let utf8 = unsafe { encoding::rb_utf8_encoding() };
         let ascii_7bit = unsafe { encoding::rb_usascii_encoding() };
 
-        let str_enc = unsafe { encoding::rb_enc_get(self.0) };
+        let str_enc = unsafe { encoding::rb_enc_get(*self.0) };
         str_enc == utf8 || str_enc == ascii_7bit
     }
 
     pub fn is_ascii(&self) -> bool {
         let ascii_7bit = unsafe { encoding::rb_usascii_encoding() };
 
-        let str_enc = unsafe { encoding::rb_enc_get(self.0) };
+        let str_enc = unsafe { encoding::rb_enc_get(*self.0) };
         str_enc == ascii_7bit
     }
 
     pub fn len(&self) -> usize {
-        unsafe { rb_str_len(self.0) as usize }
+        unsafe { rb_str_len(*self.0) as usize }
     }
 
     pub fn bytes(&self) -> &[u8] {
         unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) }
     }
 
-    pub fn try_str(&self) -> Result<&str, RubyConversionError> {
+    pub fn try_str(&'a self) -> Result<&'a str, RubyConversionError> {
         if self.is_utf8() {
             Ok(unsafe { str::from_utf8_unchecked(self.bytes()) })
         } else {
-            Err(())
+            Err(RubyConversionError{
+                value: "".to_owned(), // TODO
+                into_type: "utf8 string".to_owned()
+            })
         }
     }
 
@@ -323,55 +344,31 @@ impl RubyString {
         if let Ok(s) = self.try_str() {
             s.to_owned()
         } else {
-            RubyString(unsafe {
-                encoding::rb_str_export_to_enc(self.0, encoding::rb_utf8_encoding())
-            })
+            let converted = unsafe { encoding::rb_str_export_to_enc(*(self.0), encoding::rb_utf8_encoding()) };
+            RubyString(&converted)
             .try_str()
             .unwrap()
             .to_owned()
         }
     }
 
-    fn as_ptr(&self) -> *const u8 {
-        unsafe { rb_str_ptr(self.0) }
+    unsafe fn as_ptr(&self) -> *const u8 {
+        rb_str_ptr(*self.0)
     }
 }
 
-impl TryFromRuby for RubyString {
-    fn try_from(value: RubyValue) -> Result<Self, RubyConversionError> {
+impl<'a> TryFromRuby<'a> for RubyString<'a> {
+    fn try_from(value: &'a RubyValue) -> Result<Self, RubyConversionError> {
         if value.infer_type() != Some(bindings::ruby_value_type_RUBY_T_STRING) {
-            Err(())
+            Err(RubyConversionError{
+                value: "".to_owned(), // TODO
+                into_type: "string".to_owned()
+            })
         } else {
-            Ok(RubyString(value.0))
+            Ok(RubyString(&value.0))
         }
     }
 }
-
-impl TryFromRuby for &str {
-    fn try_from(value: RubyValue) -> Result<Self, RubyConversionError> {
-        let rstring: RubyString = <RubyString>::try_from(value)?;
-
-        // Would be real nice if we could just rstring.try_str()
-        // Borrow checker acts up though as we are being fast and
-        // loose with saftey
-        if rstring.is_utf8() {
-            unsafe {
-                let slice: &[u8] = slice::from_raw_parts(rstring.as_ptr(), rstring.len());
-                Ok(str::from_utf8_unchecked(slice))
-            }
-        } else {
-            Err(())
-        }
-    }
-}
-
-impl TryFromRuby for &[u8] {
-    fn try_from(value: RubyValue) -> Result<Self, RubyConversionError> {
-        let string: RubyString = <RubyString>::try_from(value)?;
-        unsafe { Ok(slice::from_raw_parts(string.as_ptr(), string.len())) }
-    }
-}
-
 
 // Add hacky direct binding
 
@@ -384,7 +381,7 @@ pub fn rb_define_global_const(name: &str, value: RubyValue) -> Result<(), Box<dy
 
 #[allow(dead_code)]
 pub fn rb_define_const(
-    parent: RubyValue,
+    parent: &mut RubyValue,
     name: &str,
     value: RubyValue,
 ) -> Result<(), Box<dyn Error>> {
@@ -402,7 +399,7 @@ pub fn rb_define_module(name: &str) -> Result<RubyValue, Box<dyn Error>> {
 }
 
 #[allow(dead_code)]
-pub fn rb_define_module_under(parent: RubyValue, name: &str) -> Result<RubyValue, Box<dyn Error>> {
+pub fn rb_define_module_under(parent: &mut RubyValue, name: &str) -> Result<RubyValue, Box<dyn Error>> {
     let c_name = CString::new(name)?;
     Ok(RubyValue(unsafe {
         bindings::rb_define_module_under(parent.0, c_name.as_ptr())
@@ -411,7 +408,7 @@ pub fn rb_define_module_under(parent: RubyValue, name: &str) -> Result<RubyValue
 
 #[allow(dead_code)]
 pub fn rb_define_method<F: RubyCallback>(
-    parent: RubyValue,
+    parent: &mut RubyValue,
     name: &str,
     func: F,
 ) -> Result<(), Box<dyn Error>> {
@@ -422,7 +419,7 @@ pub fn rb_define_method<F: RubyCallback>(
 
 #[allow(dead_code)]
 pub fn rb_define_module_function<F: RubyCallback>(
-    parent: RubyValue,
+    parent: &mut RubyValue,
     name: &str,
     func: F,
 ) -> Result<(), Box<dyn Error>> {
