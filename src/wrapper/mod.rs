@@ -302,6 +302,14 @@ impl From<&str> for RubyValue {
     }
 }
 
+impl From<String> for RubyValue {
+    fn from(value: String) -> RubyValue {
+        RubyValue(unsafe {
+            bindings::rb_utf8_str_new(std::mem::transmute(value.as_ptr()), value.len() as i64)
+        })
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct RubyString<'a>(&'a VALUE);
 

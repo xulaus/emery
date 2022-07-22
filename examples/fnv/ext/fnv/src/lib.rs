@@ -2,17 +2,18 @@ extern crate emery;
 
 use emery::*;
 
-fn fnv1a (arg: RubyValue) -> Result<u64, RubyConversionError>{
+fn fnv1a (arg: RubyValue) -> Result<String, RubyConversionError>{
     let string: RubyString = TryFromRuby::try_from(&arg)?;
     const PRIME: u64 = 1099511628211;
     const BASIS: u64 = 14695981039346656037;
-
-    Ok(string.bytes().iter().fold(
+    let hash = string.bytes().iter().fold(
         BASIS,
         |hash, byte| {
             (hash ^ (*byte as u64)).wrapping_mul(PRIME)
         }
-    ))
+    );
+
+    Ok(format!("{:x}", hash))
 }
 
 #[no_mangle]
