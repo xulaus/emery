@@ -7,7 +7,7 @@ use std::{convert::From, error::Error, ffi::CString, mem, result::Result, slice,
 
 use bindings::VALUE;
 
-pub type CallbackPtr = unsafe extern "C" fn() -> VALUE;
+type CallbackPtr = unsafe extern "C" fn() -> VALUE;
 #[derive(Debug)]
 pub struct RubyConversionError{
     value: String,
@@ -439,6 +439,38 @@ impl<'a> TryFromRuby<'a> for RubyStringLike<'a> {
     }
 }
 
+pub struct RubyModule(VALUE);
+impl RubyModule {
+    pub fn new(name: &str) -> RubyModule {
+        let c_name = CString::new(name).expect("invalid module name");
+        RubyModule(unsafe {
+            bindings::rb_define_module(c_name.as_ptr())
+        })
+    }
+
+    pub fn add_method<F: RubyCallback>(self, name: &str, func: F) -> RubyModule {
+        let c_name = CString::new(name).expect("invalid function name");
+        unsafe {
+            bindings::rb_define_module_function(
+                self.0,
+                c_name.as_ptr(),
+                Some(func.as_ruby()),
+                F::ARGC
+            )
+        };
+        self
+    }
+
+    pub fn add_sub_module<F: FnOnce(RubyModule) >(self, name: &str, builder: F) -> RubyModule{
+        let c_name = CString::new(name).expect("invalid module name");
+        let module = RubyModule(unsafe {
+            bindings::rb_define_module_under(self.0, c_name.as_ptr())
+        });
+        builder.call_once((module,));
+        self
+    }
+}
+
 // Add hacky direct binding
 
 #[allow(dead_code)]
@@ -460,22 +492,6 @@ pub fn rb_define_const(
 }
 
 #[allow(dead_code)]
-pub fn rb_define_module(name: &str) -> Result<RubyValue, Box<dyn Error>> {
-    let c_name = CString::new(name)?;
-    Ok(RubyValue(unsafe {
-        bindings::rb_define_module(c_name.as_ptr())
-    }))
-}
-
-#[allow(dead_code)]
-pub fn rb_define_module_under(parent: &mut RubyValue, name: &str) -> Result<RubyValue, Box<dyn Error>> {
-    let c_name = CString::new(name)?;
-    Ok(RubyValue(unsafe {
-        bindings::rb_define_module_under(parent.0, c_name.as_ptr())
-    }))
-}
-
-#[allow(dead_code)]
 pub fn rb_define_method<F: RubyCallback>(
     parent: &mut RubyValue,
     name: &str,
@@ -483,24 +499,6 @@ pub fn rb_define_method<F: RubyCallback>(
 ) -> Result<(), Box<dyn Error>> {
     let c_name = CString::new(name)?;
     unsafe { bindings::rb_define_method(parent.0, c_name.as_ptr(), Some(func.as_ruby()), F::ARGC) };
-    Ok(())
-}
-
-#[allow(dead_code)]
-pub fn rb_define_module_function<F: RubyCallback>(
-    parent: &mut RubyValue,
-    name: &str,
-    func: F,
-) -> Result<(), Box<dyn Error>> {
-    let c_name = CString::new(name)?;
-    unsafe {
-        bindings::rb_define_module_function(
-            parent.0,
-            c_name.as_ptr(),
-            Some(func.as_ruby()),
-            F::ARGC,
-        )
-    };
     Ok(())
 }
 

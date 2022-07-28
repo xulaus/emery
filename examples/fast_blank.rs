@@ -27,13 +27,7 @@ pub extern "C" fn ruby_str_all_whitespace(_module: RubyValue, arg: RubyValue) ->
 
 #[no_mangle]
 pub extern "C" fn Init_libfast_blank() {
-    let mut emery_module = rb_define_module("EMERY").expect("invalid module name");
-
-    rb_define_const(&mut emery_module, "EMERY", 1.0.into()).expect("invalid function name");
-    rb_define_module_function(
-        &mut emery_module,
-        "all_whitespace?",
+    RubyModule::new("EMERY").add_method("all_whitespace?",
         ruby_str_all_whitespace as extern "C" fn(RubyValue, RubyValue) -> RubyValue,
-    )
-    .expect("invalid function name");
+    );
 }
