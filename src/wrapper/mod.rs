@@ -1,7 +1,5 @@
 #[allow(warnings)]
 mod bindings;
-#[allow(warnings)]
-mod encoding;
 
 use std::{convert::From, error::Error, ffi::CString, mem, result::Result, slice, str};
 
@@ -306,17 +304,17 @@ pub enum  RubyStringLike<'a>{
 
 impl<'a> RubyString<'a> {
     pub fn is_utf8(&self) -> bool {
-        let utf8 = unsafe { encoding::rb_utf8_encoding() };
-        let ascii_7bit = unsafe { encoding::rb_usascii_encoding() };
+        let utf8 = unsafe { bindings::rb_utf8_encoding() };
+        let ascii_7bit = unsafe { bindings::rb_usascii_encoding() };
 
-        let str_enc = unsafe { encoding::rb_enc_get(*self.0) };
+        let str_enc = unsafe { bindings::rb_enc_get(*self.0) };
         str_enc == utf8 || str_enc == ascii_7bit
     }
 
     pub fn is_ascii(&self) -> bool {
-        let ascii_7bit = unsafe { encoding::rb_usascii_encoding() };
+        let ascii_7bit = unsafe { bindings::rb_usascii_encoding() };
 
-        let str_enc = unsafe { encoding::rb_enc_get(*self.0) };
+        let str_enc = unsafe { bindings::rb_enc_get(*self.0) };
         str_enc == ascii_7bit
     }
 
@@ -343,7 +341,7 @@ impl<'a> RubyString<'a> {
         if let Ok(s) = self.try_str() {
             s.to_owned()
         } else {
-            let converted = unsafe { encoding::rb_str_export_to_enc(*self.0, encoding::rb_utf8_encoding()) };
+            let converted = unsafe { bindings::rb_str_export_to_enc(*self.0, bindings::rb_utf8_encoding()) };
             RubyString(&converted)
             .try_str()
             .unwrap()

@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("cargo:rustc-link-lib=ruby");
 
     let mut bindings = bindgen::Builder::default()
-        .header(format!("{}/ruby.h", ruby_dirs[1]));
+        .header(format!("{}/ruby/encoding.h", ruby_dirs[1]));
     for &dir in ruby_dirs.iter().skip(1) {
         bindings = bindings.clang_arg(format!("-I{dir}"));
     }
@@ -36,5 +36,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         .expect("Unable to generate bindings")
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
+
     Ok(())
 }
